@@ -27,15 +27,16 @@ import {
 import { filterChaptersByGrade } from './utils/curriculumFilter';
 import { buildTopicKey } from './utils/roadmapLogic';
 import {
+  addXpToProgress,
   appendDrawnShape,
   appendWrongQuestion,
+  applyDailyActivityToProgress,
   createDefaultUserProgress,
   createDefaultWelcomeChat,
   getTodayIsoDate,
   importAccountBackupCode,
   normalizeProgressForFirestore,
   RealLeaderboardUser,
-  recordDailyActivityStreak,
   refreshStreakOnLoad,
   removeWrongQuestion,
   sanitizeChatHistoryForFirestore,
@@ -158,7 +159,6 @@ function sanitizeGrade(raw: unknown): GradeLevel {
 
 function MathNovaAppContent() {
   const [firebaseVersion, setFirebaseVersion] = useState(0);
-  const [firebaseUser, setFirebaseUser] = useState<User | null>(null);
   const [activeAccount, setActiveAccount] = useState<AccountWorkspaceData | null>(
     null
   );
@@ -167,6 +167,11 @@ function MathNovaAppContent() {
   >([]);
   const [isLoadingLeaderboard, setIsLoadingLeaderboard] = useState<boolean>(true);
   const [leaderboardError, setLeaderboardError] = useState<string | null>(null);
+
+  const firebaseUserRef = useRef<User | null>(null);
+  const activeAccountRef = useRef<AccountWorkspaceData | null>(null);
+  const firestoreWriteQueueRef = useRef<Promise<void>>(Promise.resolve());
+  const pendingLocalWriteCountRef = useRef<number>(0);
 
   const pendingSignupProfileRef = useRef<{
     displayName: string;
@@ -313,13 +318,14 @@ function MathNovaAppContent() {
     let unsubscribeUserDoc: (() => void) | null = null;
 
     const unsubscribeAuth = onAuthStateChanged(auth, async (user) => {
-      setFirebaseUser(user);
+      firebaseUserRef.current = user;
       if (unsubscribeUserDoc) {
         unsubscribeUserDoc();
         unsubscribeUserDoc = null;
       }
 
       if (!user) {
+        activeAccountRef.current = null;
         setActiveAccount(null);
         return;
       }
@@ -469,6 +475,10 @@ function MathNovaAppContent() {
               : [],
           };
 
+          if (pendingLocalWriteCountRef.current > 0) {
+            return;
+          }
+          activeAccountRef.current = workspace;
           setActiveAccount(workspace);
           setGrade(workspace.profile.grade);
         },
@@ -542,7 +552,7 @@ function MathNovaAppContent() {
   }, []);
 
   const persistWorkspaceFields = useCallback(
-    async (
+    (
       uid: string,
       fields: Partial<{
         displayName: string;
@@ -561,113 +571,136 @@ function MathNovaAppContent() {
         streak: number;
       }
     ) => {
-      const { db } = getFirebaseRuntime();
-      const sanitizedFields = sanitizeForFirestore({
-        ...fields,
-        ...(fields.progress
-          ? { progress: normalizeProgressForFirestore(fields.progress) }
-          : {}),
-        updatedAt: serverTimestamp(),
-      });
+      pendingLocalWriteCountRef.current += 1;
 
-      try {
-        await updateDoc(doc(db, 'users', uid), sanitizedFields);
-      } catch (err) {
+      const executeWrite = async () => {
         try {
-          handleFirestoreError(err, OperationType.UPDATE, `users/${uid}`);
-        } catch {
-          // Structured error logged
-        }
-      }
+          const { db } = getFirebaseRuntime();
+          const sanitizedFields = sanitizeForFirestore({
+            ...fields,
+            ...(fields.progress
+              ? { progress: normalizeProgressForFirestore(fields.progress) }
+              : {}),
+            updatedAt: serverTimestamp(),
+          });
 
-      if (leaderboardSync) {
-        const cleanDisplayName =
-          (leaderboardSync.displayName || 'Học viên').trim().slice(0, 60) || 'Học viên';
-        const cleanAvatar = (leaderboardSync.avatar || '🚀').trim().slice(0, 16) || '🚀';
-        const cleanGrade = sanitizeGrade(leaderboardSync.grade);
-        const cleanXp = Math.max(0, Number(leaderboardSync.xp) || 0);
-        const cleanStreak = Math.max(0, Number(leaderboardSync.streak) || 0);
-
-        const leaderboardRef = doc(db, 'leaderboard', uid);
-        try {
-          await updateDoc(
-            leaderboardRef,
-            sanitizeForFirestore({
-              displayName: cleanDisplayName,
-              avatar: cleanAvatar,
-              grade: cleanGrade,
-              xp: cleanXp,
-              streak: cleanStreak,
-              updatedAt: serverTimestamp(),
-            })
-          );
-        } catch (err) {
-          const code = (err as { code?: string })?.code ?? '';
-          if (code === 'not-found') {
+          try {
+            await updateDoc(doc(db, 'users', uid), sanitizedFields);
+          } catch (err) {
             try {
-              await setDoc(
+              handleFirestoreError(err, OperationType.UPDATE, `users/${uid}`);
+            } catch {
+              // Structured error logged
+            }
+          }
+
+          if (leaderboardSync) {
+            const cleanDisplayName =
+              (leaderboardSync.displayName || 'Học viên').trim().slice(0, 60) || 'Học viên';
+            const cleanAvatar = (leaderboardSync.avatar || '🚀').trim().slice(0, 16) || '🚀';
+            const cleanGrade = sanitizeGrade(leaderboardSync.grade);
+            const cleanXp = Math.max(0, Number(leaderboardSync.xp) || 0);
+            const cleanStreak = Math.max(0, Number(leaderboardSync.streak) || 0);
+
+            const leaderboardRef = doc(db, 'leaderboard', uid);
+            try {
+              await updateDoc(
                 leaderboardRef,
                 sanitizeForFirestore({
-                  uid,
                   displayName: cleanDisplayName,
                   avatar: cleanAvatar,
                   grade: cleanGrade,
                   xp: cleanXp,
                   streak: cleanStreak,
-                  createdAt: serverTimestamp(),
                   updatedAt: serverTimestamp(),
                 })
               );
-              return;
-            } catch (createErr) {
+            } catch (err) {
+              const code = (err as { code?: string })?.code ?? '';
+              if (code === 'not-found') {
+                try {
+                  await setDoc(
+                    leaderboardRef,
+                    sanitizeForFirestore({
+                      uid,
+                      displayName: cleanDisplayName,
+                      avatar: cleanAvatar,
+                      grade: cleanGrade,
+                      xp: cleanXp,
+                      streak: cleanStreak,
+                      createdAt: serverTimestamp(),
+                      updatedAt: serverTimestamp(),
+                    })
+                  );
+                  return;
+                } catch (createErr) {
+                  try {
+                    handleFirestoreError(createErr, OperationType.CREATE, `leaderboard/${uid}`);
+                  } catch {
+                    // Structured error logged
+                  }
+                  return;
+                }
+              }
               try {
-                handleFirestoreError(createErr, OperationType.CREATE, `leaderboard/${uid}`);
+                handleFirestoreError(err, OperationType.UPDATE, `leaderboard/${uid}`);
               } catch {
                 // Structured error logged
               }
-              return;
             }
           }
-          try {
-            handleFirestoreError(err, OperationType.UPDATE, `leaderboard/${uid}`);
-          } catch {
-            // Structured error logged
-          }
+        } finally {
+          pendingLocalWriteCountRef.current = Math.max(
+            0,
+            pendingLocalWriteCountRef.current - 1
+          );
         }
-      }
+      };
+
+      const queued = firestoreWriteQueueRef.current.then(executeWrite, executeWrite);
+      firestoreWriteQueueRef.current = queued;
+      return queued;
     },
     []
   );
 
   const updateActiveProgress = useCallback(
     (updater: (prev: UserProgress) => UserProgress) => {
-      if (firebaseUser && activeAccount) {
-        const nextProgress = updater(activeAccount.progress);
-        setActiveAccount((prev) =>
-          prev
-            ? {
-                ...prev,
-                profile: { ...prev.profile, updatedAt: Date.now() },
-                progress: nextProgress,
-              }
-            : null
+      const currentUser = firebaseUserRef.current;
+      const currentAcc = activeAccountRef.current;
+      const today = getTodayIsoDate();
+
+      if (currentUser && currentAcc) {
+        const nextProgress = normalizeProgressForFirestore(
+          updater(currentAcc.progress),
+          today
         );
+        const nextWorkspace: AccountWorkspaceData = {
+          ...currentAcc,
+          profile: { ...currentAcc.profile, updatedAt: Date.now() },
+          progress: nextProgress,
+        };
+        activeAccountRef.current = nextWorkspace;
+        setActiveAccount(nextWorkspace);
+
         void persistWorkspaceFields(
-          firebaseUser.uid,
+          currentUser.uid,
           { progress: nextProgress },
           {
-            displayName: activeAccount.profile.displayName,
-            avatar: activeAccount.profile.avatar,
-            grade: activeAccount.profile.grade,
+            displayName: nextWorkspace.profile.displayName,
+            avatar: nextWorkspace.profile.avatar,
+            grade: nextWorkspace.profile.grade,
             xp: nextProgress.xp,
             streak: nextProgress.streak,
           }
         );
       } else {
-        setGuestProgress((prev) => updater(prev));
+        setGuestProgress((prev) =>
+          normalizeProgressForFirestore(updater(prev), today)
+        );
       }
     },
-    [firebaseUser, activeAccount, persistWorkspaceFields]
+    [persistWorkspaceFields]
   );
 
   const visibleChapters = useMemo(
@@ -706,19 +739,7 @@ function MathNovaAppContent() {
 
   const handleRecordActivity = useCallback(() => {
     const today = getTodayIsoDate();
-    updateActiveProgress((prev) => {
-      const streakUpdate = recordDailyActivityStreak(
-        prev.streak,
-        prev.lastCompletedActivityDate,
-        today
-      );
-      return {
-        ...prev,
-        streak: streakUpdate.streak,
-        lastActiveDate: today,
-        lastCompletedActivityDate: streakUpdate.lastCompletedActivityDate,
-      };
-    });
+    updateActiveProgress((prev) => applyDailyActivityToProgress(prev, today));
   }, [updateActiveProgress]);
 
   const handleToggleChapterComplete = useCallback(
@@ -783,20 +804,13 @@ function MathNovaAppContent() {
       finishedGame?: boolean;
     }) => {
       const today = getTodayIsoDate();
-      updateActiveProgress((prev) => {
-        const prevDaily = prev.dailyXp ?? {};
-        return {
-          ...prev,
-          xp: prev.xp + params.xpEarned,
-          questionsAnswered: prev.questionsAnswered + params.answeredDelta,
-          questionsCorrect: prev.questionsCorrect + params.correctDelta,
-          gamesPlayed: prev.gamesPlayed + (params.finishedGame ? 1 : 0),
-          dailyXp: {
-            ...prevDaily,
-            [today]: (prevDaily[today] ?? 0) + params.xpEarned,
-          },
-        };
-      });
+      updateActiveProgress((prev) =>
+        addXpToProgress(prev, params.xpEarned, today, {
+          answeredDelta: params.answeredDelta,
+          correctDelta: params.correctDelta,
+          finishedGame: params.finishedGame,
+        })
+      );
     },
     [updateActiveProgress]
   );
@@ -855,32 +869,42 @@ function MathNovaAppContent() {
         'id' | 'questionKey' | 'wrongCount' | 'lastWrongAt'
       >
     ) => {
-      if (firebaseUser && activeAccount) {
-        const nextNotebook = appendWrongQuestion(activeAccount.wrongNotebook, entry);
-        setActiveAccount((prev) =>
-          prev ? { ...prev, wrongNotebook: nextNotebook } : null
-        );
-        void persistWorkspaceFields(firebaseUser.uid, {
+      const currentUser = firebaseUserRef.current;
+      const currentAcc = activeAccountRef.current;
+      if (currentUser && currentAcc) {
+        const nextNotebook = appendWrongQuestion(currentAcc.wrongNotebook, entry);
+        const nextWorkspace: AccountWorkspaceData = {
+          ...currentAcc,
+          wrongNotebook: nextNotebook,
+        };
+        activeAccountRef.current = nextWorkspace;
+        setActiveAccount(nextWorkspace);
+        void persistWorkspaceFields(currentUser.uid, {
           wrongNotebook: nextNotebook,
         });
       } else {
         setGuestWrongNotebook((prev) => appendWrongQuestion(prev, entry));
       }
     },
-    [firebaseUser, activeAccount, persistWorkspaceFields]
+    [persistWorkspaceFields]
   );
 
   const handleToggleWrongMastered = useCallback(
     (entryId: string) => {
-      if (firebaseUser && activeAccount) {
+      const currentUser = firebaseUserRef.current;
+      const currentAcc = activeAccountRef.current;
+      if (currentUser && currentAcc) {
         const nextNotebook = toggleWrongQuestionMastered(
-          activeAccount.wrongNotebook,
+          currentAcc.wrongNotebook,
           entryId
         );
-        setActiveAccount((prev) =>
-          prev ? { ...prev, wrongNotebook: nextNotebook } : null
-        );
-        void persistWorkspaceFields(firebaseUser.uid, {
+        const nextWorkspace: AccountWorkspaceData = {
+          ...currentAcc,
+          wrongNotebook: nextNotebook,
+        };
+        activeAccountRef.current = nextWorkspace;
+        setActiveAccount(nextWorkspace);
+        void persistWorkspaceFields(currentUser.uid, {
           wrongNotebook: nextNotebook,
         });
       } else {
@@ -889,62 +913,77 @@ function MathNovaAppContent() {
         );
       }
     },
-    [firebaseUser, activeAccount, persistWorkspaceFields]
+    [persistWorkspaceFields]
   );
 
   const handleDeleteWrongEntry = useCallback(
     (entryId: string) => {
-      if (firebaseUser && activeAccount) {
+      const currentUser = firebaseUserRef.current;
+      const currentAcc = activeAccountRef.current;
+      if (currentUser && currentAcc) {
         const nextNotebook = removeWrongQuestion(
-          activeAccount.wrongNotebook,
+          currentAcc.wrongNotebook,
           entryId
         );
-        setActiveAccount((prev) =>
-          prev ? { ...prev, wrongNotebook: nextNotebook } : null
-        );
-        void persistWorkspaceFields(firebaseUser.uid, {
+        const nextWorkspace: AccountWorkspaceData = {
+          ...currentAcc,
+          wrongNotebook: nextNotebook,
+        };
+        activeAccountRef.current = nextWorkspace;
+        setActiveAccount(nextWorkspace);
+        void persistWorkspaceFields(currentUser.uid, {
           wrongNotebook: nextNotebook,
         });
       } else {
         setGuestWrongNotebook((prev) => removeWrongQuestion(prev, entryId));
       }
     },
-    [firebaseUser, activeAccount, persistWorkspaceFields]
+    [persistWorkspaceFields]
   );
 
   const handleSaveDrawnShape = useCallback(
     (shape: Omit<DrawnShapeRecord, 'id' | 'timestamp'>) => {
-      if (firebaseUser && activeAccount) {
-        const nextDrawn = appendDrawnShape(activeAccount.drawnHistory, shape);
-        setActiveAccount((prev) =>
-          prev ? { ...prev, drawnHistory: nextDrawn } : null
-        );
-        void persistWorkspaceFields(firebaseUser.uid, {
+      const currentUser = firebaseUserRef.current;
+      const currentAcc = activeAccountRef.current;
+      if (currentUser && currentAcc) {
+        const nextDrawn = appendDrawnShape(currentAcc.drawnHistory, shape);
+        const nextWorkspace: AccountWorkspaceData = {
+          ...currentAcc,
+          drawnHistory: nextDrawn,
+        };
+        activeAccountRef.current = nextWorkspace;
+        setActiveAccount(nextWorkspace);
+        void persistWorkspaceFields(currentUser.uid, {
           drawnHistory: nextDrawn,
         });
       } else {
         setGuestDrawnHistory((prev) => appendDrawnShape(prev, shape));
       }
     },
-    [firebaseUser, activeAccount, persistWorkspaceFields]
+    [persistWorkspaceFields]
   );
 
   const handleChatMessagesChange = useCallback(
     (msgs: ChatMessage[]) => {
       const trimmed = msgs.slice(-60);
-      if (firebaseUser && activeAccount) {
+      const currentUser = firebaseUserRef.current;
+      const currentAcc = activeAccountRef.current;
+      if (currentUser && currentAcc) {
         const sanitized = sanitizeChatHistoryForFirestore(trimmed);
-        setActiveAccount((prev) =>
-          prev ? { ...prev, chatHistory: trimmed } : null
-        );
-        void persistWorkspaceFields(firebaseUser.uid, {
+        const nextWorkspace: AccountWorkspaceData = {
+          ...currentAcc,
+          chatHistory: trimmed,
+        };
+        activeAccountRef.current = nextWorkspace;
+        setActiveAccount(nextWorkspace);
+        void persistWorkspaceFields(currentUser.uid, {
           chatHistory: sanitized,
         });
       } else {
         setGuestChatHistory(trimmed);
       }
     },
-    [firebaseUser, activeAccount, persistWorkspaceFields]
+    [persistWorkspaceFields]
   );
 
   const handleUpdateProfile = async (params: {
@@ -952,23 +991,23 @@ function MathNovaAppContent() {
     grade: GradeLevel;
     avatar: string;
   }) => {
-    if (!firebaseUser || !activeAccount) return;
+    const currentUser = firebaseUserRef.current;
+    const currentAcc = activeAccountRef.current;
+    if (!currentUser || !currentAcc) return;
 
     const cleanName = params.displayName.trim().slice(0, 60);
-    setActiveAccount((prev) =>
-      prev
-        ? {
-            ...prev,
-            profile: {
-              ...prev.profile,
-              displayName: cleanName,
-              grade: params.grade,
-              avatar: params.avatar,
-              updatedAt: Date.now(),
-            },
-          }
-        : null
-    );
+    const nextWorkspace: AccountWorkspaceData = {
+      ...currentAcc,
+      profile: {
+        ...currentAcc.profile,
+        displayName: cleanName,
+        grade: params.grade,
+        avatar: params.avatar,
+        updatedAt: Date.now(),
+      },
+    };
+    activeAccountRef.current = nextWorkspace;
+    setActiveAccount(nextWorkspace);
     setGrade(params.grade);
 
     try {
@@ -978,7 +1017,7 @@ function MathNovaAppContent() {
     }
 
     await persistWorkspaceFields(
-      firebaseUser.uid,
+      currentUser.uid,
       {
         displayName: cleanName,
         grade: params.grade,
@@ -988,38 +1027,43 @@ function MathNovaAppContent() {
         displayName: cleanName,
         avatar: params.avatar,
         grade: params.grade,
-        xp: activeAccount.progress.xp,
-        streak: activeAccount.progress.streak,
+        xp: nextWorkspace.progress.xp,
+        streak: nextWorkspace.progress.streak,
       }
     );
   };
 
   const handleLogout = async () => {
     await signOutFirebase();
+    firebaseUserRef.current = null;
+    activeAccountRef.current = null;
     setActiveAccount(null);
   };
 
   const handleImportBackupCode = async (code: string) => {
     const imported = importAccountBackupCode(code);
-    if (firebaseUser && activeAccount) {
-      const mergedProgress = imported.progress;
+    const currentUser = firebaseUserRef.current;
+    const currentAcc = activeAccountRef.current;
+    if (currentUser && currentAcc) {
+      const mergedProgress = normalizeProgressForFirestore(
+        imported.progress,
+        getTodayIsoDate()
+      );
       const sanitizedChat = sanitizeChatHistoryForFirestore(imported.chatHistory);
       const drawn = imported.drawnHistory.slice(0, 30);
       const wrong = imported.wrongNotebook.slice(0, 100);
 
-      setActiveAccount((prev) =>
-        prev
-          ? {
-              ...prev,
-              progress: mergedProgress,
-              chatHistory: imported.chatHistory,
-              drawnHistory: drawn,
-              wrongNotebook: wrong,
-            }
-          : null
-      );
+      const nextWorkspace: AccountWorkspaceData = {
+        ...currentAcc,
+        progress: mergedProgress,
+        chatHistory: imported.chatHistory,
+        drawnHistory: drawn,
+        wrongNotebook: wrong,
+      };
+      activeAccountRef.current = nextWorkspace;
+      setActiveAccount(nextWorkspace);
       await persistWorkspaceFields(
-        firebaseUser.uid,
+        currentUser.uid,
         {
           progress: mergedProgress,
           chatHistory: sanitizedChat,
@@ -1027,9 +1071,9 @@ function MathNovaAppContent() {
           wrongNotebook: wrong,
         },
         {
-          displayName: activeAccount.profile.displayName,
-          avatar: activeAccount.profile.avatar,
-          grade: activeAccount.profile.grade,
+          displayName: nextWorkspace.profile.displayName,
+          avatar: nextWorkspace.profile.avatar,
+          grade: nextWorkspace.profile.grade,
           xp: mergedProgress.xp,
           streak: mergedProgress.streak,
         }
@@ -1113,7 +1157,11 @@ function MathNovaAppContent() {
   const [isEnergyModalOpen, setIsEnergyModalOpen] = useState(false);
 
   const handleConsumeEnergy = useCallback((): boolean => {
-    const current = typeof activeProgress.energy === 'number' ? activeProgress.energy : 5;
+    const currentProgress = activeAccountRef.current
+      ? activeAccountRef.current.progress
+      : activeProgress;
+    const current =
+      typeof currentProgress.energy === 'number' ? currentProgress.energy : 5;
     if (current <= 0) {
       setIsEnergyModalOpen(true);
       return false;
@@ -1123,7 +1171,7 @@ function MathNovaAppContent() {
       energy: Math.max(0, (prev.energy ?? 5) - 1),
     }));
     return true;
-  }, [activeProgress.energy, updateActiveProgress]);
+  }, [activeProgress, updateActiveProgress]);
 
   const handleAddEnergy = useCallback((amount: number) => {
     updateActiveProgress((prev) => ({
@@ -1134,33 +1182,24 @@ function MathNovaAppContent() {
 
   const handleClaimComicReward = useCallback((): boolean => {
     const today = getTodayIsoDate();
-    if (activeProgress.lastComicRewardDate === today) {
+    const currentProgress = activeAccountRef.current
+      ? activeAccountRef.current.progress
+      : activeProgress;
+    if (currentProgress.lastComicRewardDate === today) {
       return false;
     }
     updateActiveProgress((prev) => {
       if (prev.lastComicRewardDate === today) return prev;
-      const prevDaily = prev.dailyXp ?? {};
-      const streakUpdate = recordDailyActivityStreak(
-        prev.streak,
-        prev.lastCompletedActivityDate,
-        today
-      );
+      const withXp = addXpToProgress(prev, 15, today);
+      const withStreak = applyDailyActivityToProgress(withXp, today);
       return {
-        ...prev,
-        xp: prev.xp + 15,
-        energy: Math.min(10, (prev.energy ?? 5) + 2),
+        ...withStreak,
+        energy: Math.min(10, (withStreak.energy ?? 5) + 2),
         lastComicRewardDate: today,
-        streak: streakUpdate.streak,
-        lastActiveDate: today,
-        lastCompletedActivityDate: streakUpdate.lastCompletedActivityDate,
-        dailyXp: {
-          ...prevDaily,
-          [today]: (prevDaily[today] ?? 0) + 15,
-        },
       };
     });
     return true;
-  }, [activeProgress.lastComicRewardDate, updateActiveProgress]);
+  }, [activeProgress, updateActiveProgress]);
 
   return (
     <div className="min-h-screen bg-gradient-to-b from-sky-50/90 via-white to-slate-50 dark:bg-none dark:bg-[#070B19] text-slate-900 dark:text-slate-100 flex flex-col selection:bg-blue-500 selection:text-white">
