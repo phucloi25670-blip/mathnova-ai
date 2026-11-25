@@ -222,6 +222,53 @@ export const GameArenaView: React.FC<GameArenaViewProps> = ({
     setActiveIframeUrl(millionaireUrl);
   }, [millionaireUrl]);
 
+  useEffect(() => {
+    const handleMillionaireMessage = (event: MessageEvent) => {
+      if (
+        event.origin !== window.location.origin &&
+        event.origin !== 'null'
+      ) {
+        return;
+      }
+      const payload = event.data as
+        | {
+            type?: unknown;
+            event?: unknown;
+            isCorrect?: unknown;
+            xpEarned?: unknown;
+          }
+        | null
+        | undefined;
+      if (!payload || payload.type !== 'MATHNOVA_MILLIONAIRE_XP') return;
+
+      const xpEarned = Math.min(
+        200,
+        Math.max(0, Math.round(Number(payload.xpEarned) || 0))
+      );
+      if (payload.event === 'answer') {
+        const isCorrect = Boolean(payload.isCorrect);
+        onRecordResult({
+          xpEarned,
+          answeredDelta: 1,
+          correctDelta: isCorrect ? 1 : 0,
+          finishedGame: false,
+        });
+        onRecordActivity?.();
+      } else if (payload.event === 'gameover') {
+        onRecordResult({
+          xpEarned,
+          answeredDelta: 0,
+          correctDelta: 0,
+          finishedGame: true,
+        });
+        onRecordActivity?.();
+      }
+    };
+
+    window.addEventListener('message', handleMillionaireMessage);
+    return () => window.removeEventListener('message', handleMillionaireMessage);
+  }, [onRecordResult, onRecordActivity]);
+
   // Mini-games shared state
   const [questions, setQuestions] = useState<QuizQuestion[]>([]);
   const [currentIdx, setCurrentIdx] = useState(0);
