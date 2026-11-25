@@ -451,7 +451,10 @@ export const HeaderBar: React.FC<HeaderBarProps> = ({
                     <Flame className="w-3 h-3" />
                     {activeAccount.progress.streak}
                   </span>
-                  <span className="hidden xl:inline text-cyan-300 text-[11px] font-extrabold tabular-nums">
+                  <span
+                    data-testid="header-xp-badge"
+                    className="inline-flex items-center px-1.5 py-0.5 rounded-md bg-cyan-500/20 text-cyan-200 text-[10px] font-extrabold tabular-nums whitespace-nowrap"
+                  >
                     {activeAccount.progress.xp} XP
                   </span>
                 </>
