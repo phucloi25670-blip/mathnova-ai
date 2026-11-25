@@ -204,6 +204,58 @@ export function recordDailyActivityStreak(
   };
 }
 
+export function addXpToProgress(
+  progress: UserProgress,
+  earnedXp: number,
+  todayIso: string = getTodayIsoDate(),
+  stats?: {
+    answeredDelta?: number;
+    correctDelta?: number;
+    finishedGame?: boolean;
+  }
+): UserProgress {
+  const currentXp = Number(progress.xp) || 0;
+  const delta = Number(earnedXp) || 0;
+  const newXp = Math.max(0, currentXp + delta);
+  const prevDaily = progress.dailyXp ?? {};
+  const currentTodayXp = Number(prevDaily[todayIso]) || 0;
+  const answeredDelta = Number(stats?.answeredDelta) || 0;
+  const correctDelta = Number(stats?.correctDelta) || 0;
+
+  return {
+    ...progress,
+    xp: newXp,
+    lastActiveDate: todayIso,
+    questionsAnswered: Math.max(0, (Number(progress.questionsAnswered) || 0) + answeredDelta),
+    questionsCorrect: Math.max(0, (Number(progress.questionsCorrect) || 0) + correctDelta),
+    gamesPlayed: Math.max(
+      0,
+      (Number(progress.gamesPlayed) || 0) + (stats?.finishedGame ? 1 : 0)
+    ),
+    dailyXp: {
+      ...prevDaily,
+      [todayIso]: Math.max(0, currentTodayXp + delta),
+    },
+  };
+}
+
+export function applyDailyActivityToProgress(
+  progress: UserProgress,
+  todayIso: string = getTodayIsoDate()
+): UserProgress {
+  const streakUpdate = recordDailyActivityStreak(
+    Number(progress.streak) || 0,
+    progress.lastCompletedActivityDate,
+    todayIso
+  );
+  return {
+    ...progress,
+    streak: streakUpdate.streak,
+    lastActiveDate: todayIso,
+    lastCompletedActivityDate: streakUpdate.lastCompletedActivityDate,
+  };
+}
+
 export function createDefaultWelcomeChat(): ChatMessage[] {
   return [
     {
