@@ -33,11 +33,13 @@ import {
   createDefaultWelcomeChat,
   getTodayIsoDate,
   importAccountBackupCode,
+  normalizeProgressForFirestore,
   RealLeaderboardUser,
   recordDailyActivityStreak,
   refreshStreakOnLoad,
   removeWrongQuestion,
   sanitizeChatHistoryForFirestore,
+  sanitizeForFirestore,
   toggleWrongQuestionMastered,
 } from './utils/accountStore';
 import {
@@ -120,21 +122,16 @@ function loadInitialGuestProgress(): UserProgress {
     const raw = localStorage.getItem(STORAGE_PROGRESS_KEY);
     if (!raw) return fallback;
     const parsed = JSON.parse(raw) as Partial<UserProgress>;
+    const normalized = normalizeProgressForFirestore(parsed, today);
     const streak = refreshStreakOnLoad(
-      parsed.streak ?? 0,
-      parsed.lastCompletedActivityDate,
+      normalized.streak,
+      normalized.lastCompletedActivityDate,
       today
     );
     return {
-      ...fallback,
-      ...parsed,
+      ...normalized,
       streak,
       lastActiveDate: today,
-      completedTopicKeys: Array.isArray(parsed.completedTopicKeys)
-        ? parsed.completedTopicKeys
-        : [],
-      dailyXp: parsed.dailyXp ?? {},
-      formulaMastery: parsed.formulaMastery ?? {},
     };
   } catch {
     return fallback;
@@ -349,11 +346,13 @@ function MathNovaAppContent() {
           const initialGrade = sanitizeGrade(pending?.grade ?? guestSnap.grade);
           const initialAvatar = pending?.avatar || '🚀';
 
-          const initialProgress = {
-            ...createDefaultUserProgress(today),
-            ...guestSnap.guestProgress,
-            lastActiveDate: today,
-          };
+          const initialProgress = normalizeProgressForFirestore(
+            {
+              ...guestSnap.guestProgress,
+              lastActiveDate: today,
+            },
+            today
+          );
           const initialChats = sanitizeChatHistoryForFirestore(
             guestSnap.guestChatHistory.length > 1
               ? guestSnap.guestChatHistory
@@ -362,47 +361,59 @@ function MathNovaAppContent() {
           const initialDrawn = guestSnap.guestDrawnHistory.slice(0, 30);
           const initialWrong = guestSnap.guestWrongNotebook.slice(0, 100);
 
-          await setDoc(userDocRef, {
-            uid: user.uid,
-            displayName: initialName,
-            email: (user.email || '').slice(0, 120),
-            provider,
-            grade: initialGrade,
-            avatar: initialAvatar,
-            progress: initialProgress,
-            chatHistory: initialChats,
-            drawnHistory: initialDrawn,
-            wrongNotebook: initialWrong,
-            createdAt: serverTimestamp(),
-            updatedAt: serverTimestamp(),
-          });
+          await setDoc(
+            userDocRef,
+            sanitizeForFirestore({
+              uid: user.uid,
+              displayName: initialName,
+              email: (user.email || '').slice(0, 120),
+              provider,
+              grade: initialGrade,
+              avatar: initialAvatar,
+              progress: initialProgress,
+              chatHistory: initialChats,
+              drawnHistory: initialDrawn,
+              wrongNotebook: initialWrong,
+              createdAt: serverTimestamp(),
+              updatedAt: serverTimestamp(),
+            })
+          );
 
-          await setDoc(leaderboardDocRef, {
-            uid: user.uid,
-            displayName: initialName,
-            avatar: initialAvatar,
-            grade: initialGrade,
-            xp: Math.max(0, Number(initialProgress.xp) || 0),
-            streak: Math.max(0, Number(initialProgress.streak) || 0),
-            createdAt: serverTimestamp(),
-            updatedAt: serverTimestamp(),
-          });
+          await setDoc(
+            leaderboardDocRef,
+            sanitizeForFirestore({
+              uid: user.uid,
+              displayName: initialName,
+              avatar: initialAvatar,
+              grade: initialGrade,
+              xp: Math.max(0, Number(initialProgress.xp) || 0),
+              streak: Math.max(0, Number(initialProgress.streak) || 0),
+              createdAt: serverTimestamp(),
+              updatedAt: serverTimestamp(),
+            })
+          );
         } else {
           // Ensure public leaderboard entry also exists for returning users
           const lbSnap = await getDoc(leaderboardDocRef);
           const data = existingSnap.data();
           if (!lbSnap.exists()) {
-            const p = (data.progress ?? createDefaultUserProgress(today)) as UserProgress;
-            await setDoc(leaderboardDocRef, {
-              uid: user.uid,
-              displayName: String(data.displayName || user.displayName || 'Học viên').slice(0, 60),
-              avatar: String(data.avatar || '🚀').slice(0, 16),
-              grade: sanitizeGrade(data.grade),
-              xp: Math.max(0, Number(p.xp) || 0),
-              streak: Math.max(0, Number(p.streak) || 0),
-              createdAt: serverTimestamp(),
-              updatedAt: serverTimestamp(),
-            });
+            const p = normalizeProgressForFirestore(
+              data.progress as Partial<UserProgress> | undefined,
+              today
+            );
+            await setDoc(
+              leaderboardDocRef,
+              sanitizeForFirestore({
+                uid: user.uid,
+                displayName: String(data.displayName || user.displayName || 'Học viên').slice(0, 60),
+                avatar: String(data.avatar || '🚀').slice(0, 16),
+                grade: sanitizeGrade(data.grade),
+                xp: Math.max(0, Number(p.xp) || 0),
+                streak: Math.max(0, Number(p.streak) || 0),
+                createdAt: serverTimestamp(),
+                updatedAt: serverTimestamp(),
+              })
+            );
           }
         }
       } catch (err) {
@@ -419,15 +430,7 @@ function MathNovaAppContent() {
           if (!docSnap.exists()) return;
           const data = docSnap.data();
           const rawProgress = (data.progress ?? {}) as Partial<UserProgress>;
-          const mergedProgress: UserProgress = {
-            ...createDefaultUserProgress(today),
-            ...rawProgress,
-            completedTopicKeys: Array.isArray(rawProgress.completedTopicKeys)
-              ? rawProgress.completedTopicKeys
-              : [],
-            dailyXp: rawProgress.dailyXp ?? {},
-            formulaMastery: rawProgress.formulaMastery ?? {},
-          };
+          const mergedProgress = normalizeProgressForFirestore(rawProgress, today);
           mergedProgress.streak = refreshStreakOnLoad(
             mergedProgress.streak,
             mergedProgress.lastCompletedActivityDate,
@@ -559,11 +562,16 @@ function MathNovaAppContent() {
       }
     ) => {
       const { db } = getFirebaseRuntime();
+      const sanitizedFields = sanitizeForFirestore({
+        ...fields,
+        ...(fields.progress
+          ? { progress: normalizeProgressForFirestore(fields.progress) }
+          : {}),
+        updatedAt: serverTimestamp(),
+      });
+
       try {
-        await updateDoc(doc(db, 'users', uid), {
-          ...fields,
-          updatedAt: serverTimestamp(),
-        });
+        await updateDoc(doc(db, 'users', uid), sanitizedFields);
       } catch (err) {
         try {
           handleFirestoreError(err, OperationType.UPDATE, `users/${uid}`);
@@ -573,16 +581,53 @@ function MathNovaAppContent() {
       }
 
       if (leaderboardSync) {
+        const cleanDisplayName =
+          (leaderboardSync.displayName || 'Học viên').trim().slice(0, 60) || 'Học viên';
+        const cleanAvatar = (leaderboardSync.avatar || '🚀').trim().slice(0, 16) || '🚀';
+        const cleanGrade = sanitizeGrade(leaderboardSync.grade);
+        const cleanXp = Math.max(0, Number(leaderboardSync.xp) || 0);
+        const cleanStreak = Math.max(0, Number(leaderboardSync.streak) || 0);
+
+        const leaderboardRef = doc(db, 'leaderboard', uid);
         try {
-          await updateDoc(doc(db, 'leaderboard', uid), {
-            displayName: leaderboardSync.displayName.slice(0, 60),
-            avatar: leaderboardSync.avatar.slice(0, 16),
-            grade: leaderboardSync.grade,
-            xp: Math.max(0, Number(leaderboardSync.xp) || 0),
-            streak: Math.max(0, Number(leaderboardSync.streak) || 0),
-            updatedAt: serverTimestamp(),
-          });
+          await updateDoc(
+            leaderboardRef,
+            sanitizeForFirestore({
+              displayName: cleanDisplayName,
+              avatar: cleanAvatar,
+              grade: cleanGrade,
+              xp: cleanXp,
+              streak: cleanStreak,
+              updatedAt: serverTimestamp(),
+            })
+          );
         } catch (err) {
+          const code = (err as { code?: string })?.code ?? '';
+          if (code === 'not-found') {
+            try {
+              await setDoc(
+                leaderboardRef,
+                sanitizeForFirestore({
+                  uid,
+                  displayName: cleanDisplayName,
+                  avatar: cleanAvatar,
+                  grade: cleanGrade,
+                  xp: cleanXp,
+                  streak: cleanStreak,
+                  createdAt: serverTimestamp(),
+                  updatedAt: serverTimestamp(),
+                })
+              );
+              return;
+            } catch (createErr) {
+              try {
+                handleFirestoreError(createErr, OperationType.CREATE, `leaderboard/${uid}`);
+              } catch {
+                // Structured error logged
+              }
+              return;
+            }
+          }
           try {
             handleFirestoreError(err, OperationType.UPDATE, `leaderboard/${uid}`);
           } catch {
@@ -785,7 +830,7 @@ function MathNovaAppContent() {
         return {
           ...prev,
           xp: Math.max(0, prev.xp + xpDelta),
-          lastStudiedChapterId: matchedChapter?.id ?? prev.lastStudiedChapterId,
+          lastStudiedChapterId: matchedChapter?.id ?? prev.lastStudiedChapterId ?? '',
           formulaMastery: {
             ...prevMap,
             [formulaId]: status,
