@@ -1,0 +1,872 @@
+<!DOCTYPE html>
+<html lang="vi">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Ai Là Triệu Phú - Who Wants to Be a Millionaire</title>
+    <!-- Tailwind CSS CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Font Awesome Icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <!-- Google Fonts -->
+    <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;600;700;800;900&display=swap"
+        rel="stylesheet">
+
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        'altp-dark': '#040b1e',
+                        'altp-navy': '#091535',
+                        'altp-blue': '#102766',
+                        'altp-gold': '#ffcc00',
+                        'altp-gold-light': '#ffea79',
+                        'altp-gold-dark': '#b38f00',
+                    },
+                    fontFamily: {
+                        sans: ['Montserrat', 'sans-serif'],
+                    }
+                }
+            }
+        }
+    </script>
+    <style>
+        body {
+            background: radial-gradient(circle at center, #0d1b2a, #010811);
+            color: #ffffff;
+            font-family: 'Montserrat', sans-serif;
+            user-select: none;
+            overflow-y: auto !important;
+            /* Ép hiện thanh cuộn dọc khi đáp án quá dài */
+            overflow-x: hidden;
+            min-height: 100vh;
+            height: auto !important;
+            /* Cho phép chiều cao co giãn tự nhiên */
+        }
+
+        /* Diamond Hexagon Answer Box styling */
+        .answer-btn {
+            clip-path: polygon(15px 0%, calc(100% - 15px) 0%, 100% 50%, calc(100% - 15px) 100%, 15px 100%, 0% 50%);
+            position: relative;
+            background: linear-gradient(180deg, #102766 0%, #071333 100%);
+            border: 2px solid #2a4fa3;
+            transition: all 0.2s ease;
+        }
+
+        .answer-btn::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(255, 255, 255, 0.05);
+            pointer-events: none;
+        }
+
+        .answer-btn:hover:not(:disabled) {
+            background: linear-gradient(180deg, #1b3da1 0%, #0d2159 100%);
+            border-color: #ffcc00;
+            box-shadow: 0 0 15px rgba(255, 204, 0, 0.4);
+            transform: scale(1.01);
+        }
+
+        /* States */
+        .answer-btn.selected {
+            background: linear-gradient(180deg, #cca000 0%, #806400 100%) !important;
+            border-color: #ffffff !important;
+            color: #ffffff !important;
+            animation: pulse-gold 0.8s infinite alternate;
+        }
+
+        .answer-btn.correct {
+            background: linear-gradient(180deg, #10b981 0%, #047857 100%) !important;
+            border-color: #6ee7b7 !important;
+            color: #ffffff !important;
+            animation: flash-green 0.5s ease 3;
+        }
+
+        .answer-btn.wrong {
+            background: linear-gradient(180deg, #ef4444 0%, #b91c1c 100%) !important;
+            border-color: #fca5a5 !important;
+            color: #ffffff !important;
+        }
+
+        /* Question Box Style */
+        .question-box {
+            clip-path: polygon(20px 0%, calc(100% - 20px) 0%, 100% 50%, calc(100% - 20px) 100%, 20px 100%, 0% 50%);
+            background: linear-gradient(180deg, #0d2259 0%, #050e26 100%);
+            border: 3px solid #3b82f6;
+            box-shadow: 0 0 25px rgba(59, 130, 246, 0.3), inset 0 0 15px rgba(0, 0, 0, 0.8);
+        }
+
+        /* Glowing Effects */
+        .gold-glow {
+            text-shadow: 0 0 10px rgba(255, 204, 0, 0.6), 0 0 20px rgba(255, 204, 0, 0.3);
+        }
+
+        .box-glow {
+            box-shadow: 0 0 20px rgba(16, 39, 102, 0.8), 0 0 40px rgba(0, 0, 0, 0.9);
+        }
+
+        /* Animations */
+        @keyframes pulse-gold {
+            0% {
+                box-shadow: 0 0 5px #ffcc00;
+            }
+
+            100% {
+                box-shadow: 0 0 25px #ffcc00;
+            }
+        }
+
+        @keyframes flash-green {
+
+            0%,
+            100% {
+                opacity: 1;
+            }
+
+            50% {
+                opacity: 0.4;
+            }
+        }
+
+        /* Glassmorphism modals */
+        .modal-bg {
+            background: rgba(4, 11, 30, 0.85);
+            backdrop-filter: blur(8px);
+        }
+
+        /* Scrollbar custom */
+        ::-webkit-scrollbar {
+            width: 6px;
+        }
+
+        ::-webkit-scrollbar-track {
+            background: #040b1e;
+        }
+
+        ::-webkit-scrollbar-thumb {
+            background: #102766;
+            border-radius: 3px;
+        }
+
+        ::-webkit-scrollbar-thumb:hover {
+            background: #ffcc00;
+        }
+    </style>
+</head>
+
+<body class="flex flex-col min-h-screen justify-between relative overflow-hidden">
+
+    <!-- Ambient Lighting Effect -->
+    <div
+        class="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[600px] h-[600px] bg-blue-600/10 rounded-full blur-[120px] pointer-events-none">
+    </div>
+
+    <!-- HEADER / TOP BAR -->
+    <header
+        class="w-full bg-altp-navy/80 border-b border-blue-900/50 py-3 px-4 md:px-8 flex justify-between items-center z-10 backdrop-blur-md">
+        <div class="flex items-center space-x-3">
+            <div
+                class="w-10 h-10 rounded-full bg-gradient-to-tr from-altp-gold-dark to-altp-gold flex items-center justify-center font-black text-altp-dark text-xl shadow-lg border border-yellow-200">
+                ?
+            </div>
+            <span
+                class="font-black text-xl md:text-2xl tracking-wider text-transparent bg-clip-text bg-gradient-to-r from-yellow-200 via-altp-gold to-yellow-500 gold-glow uppercase">
+                Ai Là Triệu Phú
+            </span>
+        </div>
+
+        <!-- Toggle Money Ladder Mobile Button -->
+        <button id="toggle-ladder-btn" onclick="toggleLadderMobile()"
+            class="md:hidden bg-altp-blue border border-altp-gold text-altp-gold px-3 py-1.5 rounded-lg text-sm font-bold flex items-center gap-2">
+            <i class="fa-solid fa-layer-group"></i> Tháp Tiền
+        </button>
+    </header>
+
+    <!-- MAIN GAME AREA -->
+    <main class="flex-1 max-w-7xl w-full mx-auto p-3 md:p-6 grid grid-cols-1 md:grid-cols-4 gap-6 z-10 items-center">
+
+        <!-- LEFT/CENTER: GAMEPLAY AREA (3 cols) -->
+        <div class="md:col-span-3 flex flex-col justify-between h-full space-y-4 md:space-y-6">
+
+            <!-- TOP STATS & HELPLINES -->
+            <div
+                class="bg-altp-navy/60 rounded-2xl p-4 border border-blue-900/40 flex flex-wrap justify-between items-center gap-4 box-glow">
+
+                <!-- Lifelines Buttons -->
+                <div class="flex items-center space-x-2 md:space-x-4">
+                    <!-- 50:50 -->
+                    <button id="help-5050" onclick="useHelpline('5050')"
+                        class="helpline-btn group relative w-12 h-12 md:w-14 md:h-14 rounded-full bg-gradient-to-b from-blue-700 to-altp-dark border-2 border-altp-gold text-altp-gold flex items-center justify-center font-black text-xs md:text-sm shadow-md hover:scale-105 active:scale-95 transition disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:scale-100">
+                        <span>50:50</span>
+                        <span
+                            class="absolute -bottom-6 text-[10px] text-gray-300 font-normal opacity-0 group-hover:opacity-100 transition whitespace-nowrap">50/50</span>
+                    </button>
+                    <!-- Phone -->
+                    <button id="help-phone" onclick="useHelpline('phone')"
+                        class="helpline-btn group relative w-12 h-12 md:w-14 md:h-14 rounded-full bg-gradient-to-b from-blue-700 to-altp-dark border-2 border-altp-gold text-altp-gold flex items-center justify-center text-base md:text-xl shadow-md hover:scale-105 active:scale-95 transition disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:scale-100">
+                        <i class="fa-solid fa-phone"></i>
+                        <span
+                            class="absolute -bottom-6 text-[10px] text-gray-300 font-normal opacity-0 group-hover:opacity-100 transition whitespace-nowrap">Gọi
+                            điện thoại</span>
+                    </button>
+                    <!-- Audience -->
+                    <button id="help-audience" onclick="useHelpline('audience')"
+                        class="helpline-btn group relative w-12 h-12 md:w-14 md:h-14 rounded-full bg-gradient-to-b from-blue-700 to-altp-dark border-2 border-altp-gold text-altp-gold flex items-center justify-center text-base md:text-xl shadow-md hover:scale-105 active:scale-95 transition disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:scale-100">
+                        <i class="fa-solid fa-users"></i>
+                        <span
+                            class="absolute -bottom-6 text-[10px] text-gray-300 font-normal opacity-0 group-hover:opacity-100 transition whitespace-nowrap">Hỏi
+                            khán giả</span>
+                    </button>
+                    <!-- Swap Question -->
+                    <button id="help-swap" onclick="useHelpline('swap')"
+                        class="helpline-btn group relative w-12 h-12 md:w-14 md:h-14 rounded-full bg-gradient-to-b from-blue-700 to-altp-dark border-2 border-altp-gold text-altp-gold flex items-center justify-center text-base md:text-xl shadow-md hover:scale-105 active:scale-95 transition disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:scale-100">
+                        <i class="fa-solid fa-rotate"></i>
+                        <span
+                            class="absolute -bottom-6 text-[10px] text-gray-300 font-normal opacity-0 group-hover:opacity-100 transition whitespace-nowrap">Đổi
+                            câu hỏi</span>
+                    </button>
+                </div>
+
+                <!-- Current Score & Status -->
+                <div class="flex items-center gap-4">
+                    <div class="text-right">
+                        <div class="text-xs text-blue-300 uppercase tracking-widest font-semibold">Tiền thưởng hiện tại
+                        </div>
+                        <div id="current-prize-display"
+                            class="text-xl md:text-2xl font-extrabold text-altp-gold gold-glow">0 VNĐ</div>
+                    </div>
+                    <button onclick="stopGameWithMoney()"
+                        class="bg-red-900/60 border border-red-500 hover:bg-red-700 text-red-200 text-xs md:text-sm font-bold py-2 px-3 rounded-lg transition shadow">
+                        Dừng chơi
+                    </button>
+                </div>
+            </div>
+
+            <!-- QUESTION DISPLAY BOX -->
+            <div class="relative py-6 md:py-8 px-6 md:px-12 w-full text-center question-box my-auto">
+                <div
+                    class="absolute top-2 left-1/2 -translate-x-1/2 text-[11px] uppercase tracking-widest text-altp-gold font-bold px-3 py-0.5 rounded-full bg-altp-dark/80 border border-blue-900">
+                    Câu hỏi số <span id="question-number">1</span>/15
+                </div>
+                <h2 id="question-text"
+                    class="text-base sm:text-lg md:text-2xl font-bold leading-relaxed text-blue-50 tracking-wide mt-2">
+                    Đang tải câu hỏi...
+                </h2>
+            </div>
+
+            <!-- ANSWERS GRID -->
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-3 md:gap-4 pb-2">
+                <!-- Option A -->
+                <button id="btn-answer-0" onclick="selectAnswer(0)"
+                    class="answer-btn py-3.5 px-6 text-left flex items-center w-full group">
+                    <span class="text-altp-gold font-black mr-3 text-lg group-hover:scale-110 transition">A:</span>
+                    <span id="text-answer-0" class="text-sm md:text-base font-semibold text-gray-100">Đáp án A</span>
+                </button>
+                <!-- Option B -->
+                <button id="btn-answer-1" onclick="selectAnswer(1)"
+                    class="answer-btn py-3.5 px-6 text-left flex items-center w-full group">
+                    <span class="text-altp-gold font-black mr-3 text-lg group-hover:scale-110 transition">B:</span>
+                    <span id="text-answer-1" class="text-sm md:text-base font-semibold text-gray-100">Đáp án B</span>
+                </button>
+                <!-- Option C -->
+                <button id="btn-answer-2" onclick="selectAnswer(2)"
+                    class="answer-btn py-3.5 px-6 text-left flex items-center w-full group">
+                    <span class="text-altp-gold font-black mr-3 text-lg group-hover:scale-110 transition">C:</span>
+                    <span id="text-answer-2" class="text-sm md:text-base font-semibold text-gray-100">Đáp án C</span>
+                </button>
+                <!-- Option D -->
+                <button id="btn-answer-3" onclick="selectAnswer(3)"
+                    class="answer-btn py-3.5 px-6 text-left flex items-center w-full group">
+                    <span class="text-altp-gold font-black mr-3 text-lg group-hover:scale-110 transition">D:</span>
+                    <span id="text-answer-3" class="text-sm md:text-base font-semibold text-gray-100">Đáp án D</span>
+                </button>
+            </div>
+        </div>
+
+        <!-- RIGHT: MONEY LADDER (1 col) -->
+        <div id="money-ladder-container"
+            class="hidden md:flex flex-col bg-altp-navy/80 rounded-2xl p-4 border border-blue-900/60 box-glow h-full justify-between">
+            <h3
+                class="text-center font-black text-altp-gold uppercase tracking-wider text-sm border-b border-blue-900/80 pb-2">
+                Tháp Tiền Thưởng
+            </h3>
+            <ul id="money-ladder" class="space-y-1 my-auto text-xs md:text-sm font-bold">
+                <!-- Rendered by JS -->
+            </ul>
+        </div>
+    </main>
+
+    <!-- FOOTER -->
+    <footer class="w-full text-center py-2 text-[11px] text-blue-400/60 z-10">
+        Trò chơi "Ai Là Triệu Phú" &copy; Web App Mini Project
+    </footer>
+
+    <!-- MODAL: HELP - PHONE CALL -->
+    <div id="modal-phone" class="fixed inset-0 modal-bg z-50 hidden flex items-center justify-center p-4">
+        <div
+            class="bg-altp-navy border-2 border-altp-gold rounded-2xl p-6 max-w-md w-full text-center shadow-2xl relative animate-fade-in">
+            <div
+                class="w-16 h-16 rounded-full bg-blue-900 border-2 border-altp-gold mx-auto flex items-center justify-center text-3xl text-altp-gold mb-3">
+                <i class="fa-solid fa-user-doctor"></i>
+            </div>
+            <h3 class="text-xl font-bold text-altp-gold mb-1">Gọi Điện Cho Người Thân</h3>
+            <p class="text-xs text-gray-300 mb-4">Chuyên gia đang trả lời câu hỏi cho bạn...</p>
+            <div
+                class="bg-altp-blue/60 p-4 rounded-xl border border-blue-800 text-left mb-6 italic text-sm text-blue-100">
+                "<span id="phone-dialog-text">Alo, theo tôi nghĩ đáp án chính xác của câu hỏi này nhiều khả năng
+                    là...</span>"
+            </div>
+            <button onclick="closeModal('modal-phone')"
+                class="w-full bg-gradient-to-r from-yellow-500 to-altp-gold text-altp-dark font-extrabold py-2.5 rounded-xl hover:brightness-110 transition">
+                Cảm ơn người thân
+            </button>
+        </div>
+    </div>
+
+    <!-- MODAL: HELP - AUDIENCE POLL -->
+    <div id="modal-audience" class="fixed inset-0 modal-bg z-50 hidden flex items-center justify-center p-4">
+        <div
+            class="bg-altp-navy border-2 border-altp-gold rounded-2xl p-6 max-w-md w-full text-center shadow-2xl relative">
+            <div
+                class="w-16 h-16 rounded-full bg-blue-900 border-2 border-altp-gold mx-auto flex items-center justify-center text-3xl text-altp-gold mb-3">
+                <i class="fa-solid fa-chart-column"></i>
+            </div>
+            <h3 class="text-xl font-bold text-altp-gold mb-2">Ý Kiến Khán Giả Trong Trường Quay</h3>
+
+            <!-- Poll Bars Container -->
+            <div
+                class="flex justify-around items-end h-40 pt-6 pb-2 px-4 bg-altp-dark/70 rounded-xl border border-blue-900 mb-6">
+                <div class="flex flex-col items-center h-full justify-end w-12">
+                    <span id="audience-val-0" class="text-xs font-bold text-altp-gold mb-1">0%</span>
+                    <div id="audience-bar-0"
+                        class="w-full bg-gradient-to-t from-blue-700 to-altp-gold rounded-t-md transition-all duration-1000"
+                        style="height: 0%"></div>
+                    <span class="text-xs font-bold mt-1 text-gray-300">A</span>
+                </div>
+                <div class="flex flex-col items-center h-full justify-end w-12">
+                    <span id="audience-val-1" class="text-xs font-bold text-altp-gold mb-1">0%</span>
+                    <div id="audience-bar-1"
+                        class="w-full bg-gradient-to-t from-blue-700 to-altp-gold rounded-t-md transition-all duration-1000"
+                        style="height: 0%"></div>
+                    <span class="text-xs font-bold mt-1 text-gray-300">B</span>
+                </div>
+                <div class="flex flex-col items-center h-full justify-end w-12">
+                    <span id="audience-val-2" class="text-xs font-bold text-altp-gold mb-1">0%</span>
+                    <div id="audience-bar-2"
+                        class="w-full bg-gradient-to-t from-blue-700 to-altp-gold rounded-t-md transition-all duration-1000"
+                        style="height: 0%"></div>
+                    <span class="text-xs font-bold mt-1 text-gray-300">C</span>
+                </div>
+                <div class="flex flex-col items-center h-full justify-end w-12">
+                    <span id="audience-val-3" class="text-xs font-bold text-altp-gold mb-1">0%</span>
+                    <div id="audience-bar-3"
+                        class="w-full bg-gradient-to-t from-blue-700 to-altp-gold rounded-t-md transition-all duration-1000"
+                        style="height: 0%"></div>
+                    <span class="text-xs font-bold mt-1 text-gray-300">D</span>
+                </div>
+            </div>
+
+            <button onclick="closeModal('modal-audience')"
+                class="w-full bg-gradient-to-r from-yellow-500 to-altp-gold text-altp-dark font-extrabold py-2.5 rounded-xl hover:brightness-110 transition">
+                Đóng lại
+            </button>
+        </div>
+    </div>
+
+    <!-- MODAL: GAME OVER / WIN -->
+    <div id="modal-gameover" class="fixed inset-0 modal-bg z-50 hidden flex items-center justify-center p-4">
+        <div
+            class="bg-altp-navy border-2 border-altp-gold rounded-3xl p-8 max-w-lg w-full text-center shadow-2xl relative">
+            <div id="gameover-icon"
+                class="w-20 h-20 rounded-full bg-gradient-to-tr from-yellow-500 to-altp-gold mx-auto flex items-center justify-center text-4xl text-altp-dark font-black mb-4 shadow-lg">
+                <i class="fa-solid fa-trophy"></i>
+            </div>
+            <h2 id="gameover-title"
+                class="text-2xl md:text-3xl font-black text-altp-gold uppercase tracking-wider mb-2 gold-glow">
+                Kết Thúc Trò Chơi
+            </h2>
+            <p id="gameover-desc" class="text-sm text-gray-300 mb-6">Bạn đã thi đấu rất xuất sắc!</p>
+
+            <div class="bg-altp-dark/80 p-4 rounded-2xl border border-blue-900 mb-6">
+                <div class="text-xs text-blue-300 uppercase tracking-widest font-semibold mb-1">Số tiền thưởng mang về
+                </div>
+                <div id="final-prize" class="text-3xl font-black text-altp-gold gold-glow">0 VNĐ</div>
+            </div>
+
+            <button onclick="restartGame()"
+                class="w-full bg-gradient-to-r from-yellow-400 via-altp-gold to-yellow-600 text-altp-dark font-black py-3.5 rounded-xl text-lg shadow-lg hover:brightness-110 transition uppercase tracking-wider">
+                <i class="fa-solid fa-rotate-right mr-2"></i> Chơi Lại Từ Đầu
+            </button>
+        </div>
+    </div>
+
+    <!-- JAVASCRIPT GAME LOGIC -->
+    <script>
+        // --- PRIZE MONEY TABLE (15 Levels) ---
+        const PRIZE_LADDER = [
+            "200.000",
+            "400.000",
+            "600.000",
+            "1.000.000",
+            "2.000.000",   // Mốc 1 (Index 4)
+            "3.000.000",
+            "6.000.000",
+            "10.000.000",
+            "14.000.000",
+            "22.000.000",  // Mốc 2 (Index 9)
+            "30.000.000",
+            "40.000.000",
+            "60.000.000",
+            "85.000.000",
+            "150.000.000"  // Mốc 3 (Index 14)
+        ];
+
+        // --- playQuestions (15 Main + 5 Extra for Swap) ---
+        const QUESTION_BANK = [
+            // --- CHƯƠNG 1: HÀM SỐ & ĐỒ THỊ ---
+            { q: "Hàm số y = x³ - 3x đồng biến trên khoảng nào dưới đây?", a: ["(-∞; -1)", "(-1; 1)", "(0; 2)", "(-∞; 1)"], correct: 0 },
+            { q: "Tìm số điểm cực trị của hàm số y = x⁴ - 2x² + 3.", a: ["1", "2", "3", "0"], correct: 2 },
+            { q: "Đồ thị hàm số y = (2x-1)/(x+1) có tiệm cận đứng là đường thẳng nào?", a: ["x = 2", "x = -1", "y = 2", "y = -1"], correct: 1 },
+            { q: "Tìm giá trị lớn nhất của hàm số y = x³ - 3x trên đoạn [0; 2].", a: ["0", "2", "4", "-2"], correct: 1 },
+            { q: "Điểm cực đại của đồ thị hàm số y = -x³ + 3x² + 1 là điểm nào?", a: ["(0; 1)", "(2; 5)", "(1; 3)", "(-1; 5)"], correct: 1 },
+            { q: "Tìm tiệm cận ngang của đồ thị hàm số y = (3x+1)/(1-x).", a: ["y = 3", "y = -3", "x = 1", "y = 1"], correct: 1 },
+            { q: "Hàm số nào dưới đây luôn đồng biến trên tập xác định của nó?", a: ["y = (x+1)/(x-1)", "y = x³ + 3x", "y = x⁴ + x²", "y = -x³ - x"], correct: 1 },
+            { q: "Số giao điểm của đồ thị hàm số y = x³ - 3x và trục hoành là bao nhiêu?", a: ["1", "2", "3", "0"], correct: 2 },
+            { q: "Tìm điểm cực tiểu của hàm số y = x⁴ - 4x² + 1.", a: ["x = 0", "x = 2", "x = ±√2", "x = -2"], correct: 2 },
+            { q: "Cho f'(x) đổi dấu từ dương sang âm tại x = 2. Khẳng định nào đúng?", a: ["x = 2 là điểm cực tiểu", "x = 2 là điểm cực đại", "Hàm số đạt GTNN tại x = 2", "Hàm số không có cực trị"], correct: 1 },
+
+            // --- CHƯƠNG 2: MŨ VÀ LÔGARIT ---
+            { q: "Tìm tập xác định D của hàm số y = (x - 1)^(-3).", a: ["D = R", "D = (1; +∞)", "D = R \\ {1}", "D = [1; +∞)"], correct: 2 },
+            { q: "Tính đạo hàm của hàm số y = 3^x.", a: ["y' = 3^x", "y' = 3^x . ln3", "y' = 3^x / ln3", "y' = x . 3^(x-1)"], correct: 1 },
+            { q: "Giải phương trình log₃(x - 1) = 2.", a: ["x = 7", "x = 10", "x = 9", "x = 8"], correct: 1 },
+            { q: "Rút gọn biểu thức P = a^(1/3) . √a với a > 0.", a: ["a^(5/6)", "a^(1/6)", "a^(2/3)", "a^(4/3)"], correct: 0 },
+            { q: "Tìm tập nghiệm S của bất phương trình (1/2)^x > 4.", a: ["S = (-∞; -2)", "S = (-2; +∞)", "S = (-∞; 2)", "S = (2; +∞)"], correct: 0 },
+            { q: "Tính giá trị của biểu thức P = log₂4 + log₂8.", a: ["5", "6", "7", "4"], correct: 0 },
+            { q: "Cho log_a b = 3. Tính giá trị của log_a (a²b).", a: ["5", "6", "4", "9"], correct: 0 },
+            { q: "Tập xác định của hàm số y = log₅(2x - 4) là khoảng nào?", a: ["(0; +∞)", "[2; +∞)", "(2; +∞)", "R \\ {2}"], correct: 2 },
+            { q: "Giải phương trình 2^(2x-1) = 8.", a: ["x = 2", "x = 1", "x = 3", "x = 4"], correct: 0 },
+            { q: "Đồ thị hàm số y = log_a x (0 < a < 1) luôn đi qua điểm nào?", a: ["(0; 1)", "(1; 0)", "(a; 0)", "(1; a)"], correct: 1 },
+
+            // --- CHƯƠNG 3: NGUYÊN HÀM & TÍCH PHÂN ---
+            { q: "Tìm nguyên hàm của hàm số f(x) = cos x.", a: ["sin x + C", "-sin x + C", "tan x + C", "-cos x + C"], correct: 0 },
+            { q: "Tính tích phân I = ∫₀¹ (2x + 1) dx.", a: ["1", "2", "3", "4"], correct: 1 },
+            { q: "Họ tất cả các nguyên hàm của hàm số f(x) = 1/x trên khoảng (0; +∞) là gì?", a: ["ln x + C", "-1/x² + C", "ln|x| + C", "e^x + C"], correct: 0 },
+            { q: "Cho ∫₀² f(x)dx = 3 và ∫₀² g(x)dx = 4. Tính ∫₀² [f(x) + g(x)]dx.", a: ["1", "7", "-1", "12"], correct: 1 },
+            { q: "Tìm một nguyên hàm F(x) của f(x) = 2x thỏa mãn F(1) = 3.", a: ["F(x) = x² + 2", "F(x) = x² + 3", "F(x) = x² + 1", "F(x) = 2x² + 1"], correct: 0 },
+            { q: "Tính diện tích S của hình phẳng giới hạn bởi đồ thị y = x², trục hoành và hai đường thẳng x=0, x=3.", a: ["S = 9", "S = 27", "S = 3", "S = 6"], correct: 0 },
+            { q: "Tính tích phân I = ∫₀^(π/2) sin x dx.", a: ["I = 1", "I = -1", "I = 0", "I = π"], correct: 0 },
+            { q: "Tìm nguyên hàm của hàm số f(x) = e^(2x).", a: ["e^(2x) + C", "2e^(2x) + C", "(1/2)e^(2x) + C", "e^x + C"], correct: 2 },
+            { q: "Nếu ∫₁³ f(x)dx = 5 và ∫₃⁴ f(x)dx = 2 thì ∫₁⁴ f(x)dx bằng bao nhiêu?", a: ["3", "7", "10", "2.5"], correct: 1 },
+            { q: "Biết F(x) là một nguyên hàm của f(x). Công thức tích phân từ a đến b chuẩn là?", a: ["F(b) + F(a)", "F(b) - F(a)", "F(a) - F(b)", "F'(b) - F'(a)"], correct: 1 },
+
+            // --- CHƯƠNG 4: HÌNH HỌC KHÔNG GIAN KHỐI ĐA DIỆN ---
+            { q: "Thể tích V của khối chóp có diện tích đáy B và chiều cao h tính bằng công thức nào?", a: ["V = B.h", "V = (1/3)B.h", "V = 3B.h", "V = (1/2)B.h"], correct: 1 },
+            { q: "Tính thể tích V của khối lập phương có cạnh bằng 3.", a: ["V = 9", "V = 27", "V = 6", "V = 18"], correct: 1 },
+            { q: "Khối chóp tứ giác đều có bao nhiêu mặt phẳng đối xứng?", a: ["2", "4", "1", "3"], correct: 1 },
+            { q: "Tính thể tích V của khối lăng trụ đứng có diện tích đáy bằng 10 và cạnh bên bằng 5.", a: ["V = 50", "V = 50/3", "V = 25", "V = 15"], correct: 0 },
+            { q: "Khối đa diện đều loại {3; 3} là khối nào dưới đây?", a: ["Khối lập phương", "Khối tứ diện đều", "Khối bát diện đều", "Khối mười hai mặt đều"], correct: 1 },
+            { q: "Một khối hộp chữ nhật có 3 kích thước lần lượt là 2, 3, 4. Tính thể tích V.", a: ["V = 9", "V = 24", "V = 12", "V = 26"], correct: 1 },
+            { q: "Hình lăng trụ tam giác có bao nhiêu mặt?", a: ["3", "4", "5", "6"], correct: 2 },
+            { q: "Số đỉnh của một hình bát diện đều (8 mặt đều) là bao nhiêu?", a: ["6", "8", "12", "10"], correct: 0 },
+            { q: "Thể tích khối lăng trụ có diện tích đáy B và chiều cao h tính bằng công thức nào?", a: ["V = (1/3)Bh", "V = Bh", "V = (1/2)Bh", "V = 3Bh"], correct: 1 },
+            { q: "Cho khối chóp S.ABC vuông cân tại B, AB = 2, chiều cao SA = 3 vuông góc với đáy. Tính V.", a: ["V = 6", "V = 2", "V = 4", "V = 3"], correct: 1 },
+
+            // --- CHƯƠNG 5: PHƯƠNG PHÁP TỌA ĐỘ TRONG KHÔNG GIAN OXYZ ---
+            { q: "Trong không gian Oxyz, cho A(1; 2; -3). Tìm hình chiếu của A lên mặt phẳng (Oxy).", a: ["(1; 2; 0)", "(1; 0; -3)", "(0; 2; -3)", "(1; 2; 3)"], correct: 0 },
+            { q: "Trong không gian Oxyz, phương trình nào sau đây là phương trình của một mặt cầu?", a: ["x²+y²+z²-2x-4y-6z-50=0", "x²+y²-z²-2x=0", "x²+y²+z²+2x+4y+8z+50=0", "x²+y²+2x-4y+2=0"], correct: 0 },
+            { q: "Tìm tọa độ tâm I của mặt cầu (S): (x - 1)² + y² + (z + 2)² = 9.", a: ["I(1; 0; -2)", "I(-1; 0; 2)", "I(1; 0; 2)", "I(1; 1; -2)"], correct: 0 },
+            { q: "Trong không gian Oxyz, tính khoảng cách giữa hai điểm A(1;0;0) và B(1;3;4).", a: ["5", "7", "25", "√7"], correct: 0 },
+            { q: "Mặt phẳng (P): 2x - y + 3z - 1 = 0 có một vectơ pháp tuyến là gì?", a: ["n=(2; 1; 3)", "n=(2; -1; 3)", "n=(2; -1; -1)", "n=(-1; 3; -1)"], correct: 1 },
+            { q: "Tìm bán kính R của mặt cầu (S): x² + y² + z² - 2x + 4y - 4 = 0.", a: ["R = 3", "R = 9", "R = 4", "R = √5"], correct: 0 },
+            { q: "Trong không gian Oxyz, cho hai vectơ u=(1;1;0) và v=(0;1;1). Tính tích vô hướng u.v", a: ["0", "1", "2", "-1"], correct: 1 },
+            { q: "Phương trình mặt phẳng qua M(1;2;3) và nhận n=(1;0;0) làm VTPT là gì?", a: ["x - 1 = 0", "x + y + z - 6 = 0", "x - 2 = 0", "x - 3 = 0"], correct: 0 },
+            { q: "Tính khoảng cách từ điểm M(1;2;1) đến mặt phẳng (Oxy).", a: ["1", "2", "0", "√6"], correct: 0 },
+            { q: "Trong không gian Oxyz, điểm nào sau đây nằm trên trục cao Oz?", a: ["(0; 0; 5)", "(5; 0; 0)", "(0; 5; 0)", "(5; 5; 0)"], correct: 0 }
+        ];
+
+        // ==========================================
+        // THUẬT TOÁN ĐỘNG: TRỘN NGẪU NHIÊN VÀ RÚT 15 CÂU
+        // ==========================================
+        let playQuestions = [];
+
+        function shuffleAndSelectQuestions() {
+            let tempBank = [...QUESTION_BANK];
+            for (let i = tempBank.length - 1; i > 0; i--) {
+                const j = Math.floor(Math.random() * (i + 1));
+                [tempBank[i], tempBank[j]] = [tempBank[j], tempBank[i]];
+            }
+            playQuestions = tempBank.slice(0, 15);
+        }
+
+        // Tự động kích hoạt bốc 15 câu khi mở game
+        shuffleAndSelectQuestions();
+
+        // Backup questions for "Swap Question" lifeline
+        const EXTRA_QUESTIONS = [
+            { q: "Trong không gian Oxyz, mặt phẳng (Oxy) có phương trình là gì?", a: ["z = 0", "x = 0", "y = 0", "x + y = 0"], correct: 0 },
+            { q: "Tính đạo hàm của hàm số y = ln x trên khoảng (0; +∞).", a: ["y' = 1/x", "y' = -1/x²", "y' = e^x", "y' = 1/(x ln x)"], correct: 0 },
+            { q: "Cho khối cầu có bán kính R = 3. Tính thể tích V của khối cầu đó.", a: ["V = 36π", "V = 12π", "V = 4π", "V = 27π"], correct: 0 },
+            { q: "Tìm tập xác định D của hàm số y = x^(√2).", a: ["D = (0; +∞)", "D = R", "D = R \\ {0}", "D = [0; +∞)"], correct: 0 },
+            { q: "Trong không gian Oxyz, vectơ u = 2i + 3k có tọa độ là gì?", a: ["(2; 0; 3)", "(2; 3; 0)", "(0; 2; 3)", "(2; 3; 3)"], correct: 0 }
+        ];
+
+
+        // --- GAME STATE ---
+        let currentQuestionIndex = 0;
+        let isAnsweringLocked = false;
+        let activeQuestions = [];
+        let usedLifelines = {
+            '5050': false,
+            'phone': false,
+            'audience': false,
+            'swap': false
+        };
+
+        // --- WEB AUDIO SYNTHESIZER (No external audio files required) ---
+        const AudioCtx = window.AudioContext || window.webkitAudioContext;
+        let audioCtx = null;
+
+        function initAudio() {
+            if (!audioCtx) {
+                audioCtx = new AudioCtx();
+            }
+        }
+
+        function playSound(type) {
+            try {
+                initAudio();
+                if (!audioCtx) return;
+
+                const now = audioCtx.currentTime;
+                const osc = audioCtx.createOscillator();
+                const gain = audioCtx.createGain();
+                osc.connect(gain);
+                gain.connect(audioCtx.destination);
+
+                if (type === 'select') {
+                    // Short Beep Tone
+                    osc.type = 'sine';
+                    osc.frequency.setValueAtTime(440, now);
+                    osc.frequency.exponentialRampToValueAtTime(880, now + 0.15);
+                    gain.gain.setValueAtTime(0.3, now);
+                    gain.gain.linearRampToValueAtTime(0.01, now + 0.15);
+                    osc.start(now);
+                    osc.stop(now + 0.15);
+                } else if (type === 'correct') {
+                    // Success Fanfare Tone
+                    osc.type = 'triangle';
+                    osc.frequency.setValueAtTime(523.25, now); // C5
+                    osc.frequency.setValueAtTime(659.25, now + 0.15); // E5
+                    osc.frequency.setValueAtTime(783.99, now + 0.3); // G5
+                    osc.frequency.setValueAtTime(1046.50, now + 0.45); // C6
+                    gain.gain.setValueAtTime(0.4, now);
+                    gain.gain.linearRampToValueAtTime(0.01, now + 0.8);
+                    osc.start(now);
+                    osc.stop(now + 0.8);
+                } else if (type === 'wrong') {
+                    // Sad Low Buzzer
+                    osc.type = 'sawtooth';
+                    osc.frequency.setValueAtTime(200, now);
+                    osc.frequency.linearRampToValueAtTime(100, now + 0.5);
+                    gain.gain.setValueAtTime(0.4, now);
+                    gain.gain.linearRampToValueAtTime(0.01, now + 0.6);
+                    osc.start(now);
+                    osc.stop(now + 0.6);
+                } else if (type === 'lifeline') {
+                    // Magic chime
+                    osc.type = 'sine';
+                    osc.frequency.setValueAtTime(587.33, now);
+                    osc.frequency.exponentialRampToValueAtTime(1174.66, now + 0.3);
+                    gain.gain.setValueAtTime(0.3, now);
+                    gain.gain.linearRampToValueAtTime(0.01, now + 0.4);
+                    osc.start(now);
+                    osc.stop(now + 0.4);
+                }
+            } catch (e) {
+                console.log("Audio play error:", e);
+            }
+        }
+
+        // --- INIT GAME ---
+        window.onload = function () {
+            restartGame();
+        };
+
+        function restartGame() {
+            // 1. Thuật toán Fisher-Yates xáo trộn ngẫu nhiên kho 50 câu hỏi Toán 12 gốc
+            let tempBank = [...QUESTION_BANK];
+            for (let i = tempBank.length - 1; i > 0; i--) {
+                const j = Math.floor(Math.random() * (i + 1));
+                [tempBank[i], tempBank[j]] = [tempBank[j], tempBank[i]];
+            }
+
+            // 2. Cắt lấy đúng 15 câu đã trộn đưa vào activeQuestions để giao diện đọc mượt mà
+            activeQuestions = tempBank.slice(0, 15);
+
+            currentQuestionIndex = 0;
+            isAnsweringLocked = false;
+
+            usedLifelines = { '5050': false, 'phone': false, 'audience': false, 'swap': false };
+
+            // Reset Lifelines UI
+            Object.keys(usedLifelines).forEach(id => {
+                const btn = document.getElementById(`help-${id}`);
+                btn.disabled = false;
+                btn.classList.remove('opacity-40', 'line-through');
+            });
+
+            closeModal('modal-gameover');
+            renderMoneyLadder();
+            loadQuestion();
+        }
+
+        // --- RENDER MONEY LADDER ---
+        function renderMoneyLadder() {
+            const ladderEl = document.getElementById('money-ladder');
+            ladderEl.innerHTML = '';
+
+            // Render from level 15 down to 1
+            for (let i = 14; i >= 0; i--) {
+                const li = document.createElement('li');
+                const isMilestone = (i === 4 || i === 9 || i === 14);
+                const isCurrent = (i === currentQuestionIndex);
+
+                let baseClasses = "py-1.5 px-3 rounded-lg flex justify-between items-center border transition-all duration-300 ";
+
+                if (isCurrent) {
+                    baseClasses += "bg-altp-gold text-altp-dark border-white font-extrabold shadow-lg scale-105 ";
+                } else if (i < currentQuestionIndex) {
+                    baseClasses += "bg-blue-950/40 text-green-400 border-green-900/40 ";
+                } else if (isMilestone) {
+                    baseClasses += "bg-altp-blue/80 text-altp-gold border-altp-gold/50 font-black ";
+                } else {
+                    baseClasses += "bg-altp-dark/40 text-gray-300 border-blue-900/30 ";
+                }
+
+                li.className = baseClasses;
+                li.innerHTML = `
+                    <span>Câu ${i + 1}</span>
+                    <span>${PRIZE_LADDER[i]} VNĐ</span>
+                `;
+                ladderEl.appendChild(li);
+            }
+
+            // Update current prize display on top bar
+            const prizeDisplay = document.getElementById('current-prize-display');
+            if (currentQuestionIndex > 0) {
+                prizeDisplay.innerText = `${PRIZE_LADDER[currentQuestionIndex - 1]} VNĐ`;
+            } else {
+                prizeDisplay.innerText = `0 VNĐ`;
+            }
+        }
+
+        // --- LOAD QUESTION ---
+        function loadQuestion() {
+            isAnsweringLocked = false;
+            renderMoneyLadder();
+
+            const qData = activeQuestions[currentQuestionIndex];
+            document.getElementById('question-number').innerText = currentQuestionIndex + 1;
+            document.getElementById('question-text').innerText = qData.q;
+
+            // Reset Answer Buttons
+            for (let i = 0; i < 4; i++) {
+                const btn = document.getElementById(`btn-answer-${i}`);
+                const textEl = document.getElementById(`text-answer-${i}`);
+
+                btn.className = "answer-btn py-3.5 px-6 text-left flex items-center w-full group";
+                btn.style.visibility = "visible";
+                btn.disabled = false;
+                textEl.innerText = qData.a[i];
+            }
+        }
+
+        // --- ANSWER SELECTION LOGIC ---
+        function selectAnswer(selectedIndex) {
+            if (isAnsweringLocked) return;
+            isAnsweringLocked = true;
+
+            playSound('select');
+
+            const selectedBtn = document.getElementById(`btn-answer-${selectedIndex}`);
+            selectedBtn.classList.add('selected');
+
+            const currentQ = activeQuestions[currentQuestionIndex];
+            const correctIndex = currentQ.correct;
+
+            // Wait 2 seconds (dramatic pause)
+            setTimeout(() => {
+                selectedBtn.classList.remove('selected');
+
+                if (selectedIndex === correctIndex) {
+                    // Correct Answer
+                    playSound('correct');
+                    selectedBtn.classList.add('correct');
+
+                    setTimeout(() => {
+                        if (currentQuestionIndex < 14) {
+                            currentQuestionIndex++;
+                            loadQuestion();
+                        } else {
+                            // WON THE GAME (15/15)
+                            showGameOver(true, PRIZE_LADDER[14]);
+                        }
+                    }, 1800);
+
+                } else {
+                    // Wrong Answer
+                    playSound('wrong');
+                    selectedBtn.classList.add('wrong');
+
+                    // Highlight correct answer
+                    const correctBtn = document.getElementById(`btn-answer-${correctIndex}`);
+                    correctBtn.classList.add('correct');
+
+                    setTimeout(() => {
+                        // Calculate guaranteed money milestone
+                        let guaranteedPrize = "0";
+                        if (currentQuestionIndex >= 10) {
+                            guaranteedPrize = PRIZE_LADDER[9]; // Milestone 10 (22M)
+                        } else if (currentQuestionIndex >= 5) {
+                            guaranteedPrize = PRIZE_LADDER[4]; // Milestone 5 (2M)
+                        }
+                        showGameOver(false, guaranteedPrize);
+                    }, 2000);
+                }
+            }, 1800);
+        }
+
+        // --- STOP GAME & TAKE MONEY ---
+        function stopGameWithMoney() {
+            if (isAnsweringLocked) return;
+            let currentPrize = currentQuestionIndex > 0 ? PRIZE_LADDER[currentQuestionIndex - 1] : "0";
+            showGameOver(false, currentPrize, true);
+        }
+
+        // --- HELPLINES ---
+        function useHelpline(type) {
+            if (usedLifelines[type] || isAnsweringLocked) return;
+
+            usedLifelines[type] = true;
+            playSound('lifeline');
+
+            const btn = document.getElementById(`help-${type}`);
+            btn.disabled = true;
+            btn.classList.add('opacity-40', 'line-through');
+
+            const currentQ = activeQuestions[currentQuestionIndex];
+
+            if (type === '5050') {
+                // Hide 2 incorrect options
+                let wrongIndices = [0, 1, 2, 3].filter(idx => idx !== currentQ.correct);
+                // Shuffle array & pick 2
+                wrongIndices.sort(() => Math.random() - 0.5);
+
+                document.getElementById(`btn-answer-${wrongIndices[0]}`).style.visibility = "hidden";
+                document.getElementById(`btn-answer-${wrongIndices[1]}`).style.visibility = "hidden";
+
+            } else if (type === 'phone') {
+                // Phone lifeline dialog
+                const labels = ["A", "B", "C", "D"];
+                let suggestedIdx = currentQ.correct;
+
+                // 85% chance friend gives correct answer
+                if (Math.random() > 0.85) {
+                    const wrongs = [0, 1, 2, 3].filter(i => i !== currentQ.correct);
+                    suggestedIdx = wrongs[Math.floor(Math.random() * wrongs.length)];
+                }
+
+                document.getElementById('phone-dialog-text').innerText =
+                    `Theo mình thì phương án đúng của câu này chắc chắn là ${labels[suggestedIdx]} (${currentQ.a[suggestedIdx]}). Bạn hãy tin mình!`;
+
+                openModal('modal-phone');
+
+            } else if (type === 'audience') {
+                // Audience poll chart
+                let percents = [0, 0, 0, 0];
+                let correctPerc = Math.floor(Math.random() * 25) + 55; // 55% - 80%
+                let remaining = 100 - correctPerc;
+
+                percents[currentQ.correct] = correctPerc;
+
+                for (let i = 0; i < 4; i++) {
+                    if (i !== currentQ.correct) {
+                        let p = Math.floor(Math.random() * remaining);
+                        percents[i] = p;
+                        remaining -= p;
+                    }
+                }
+                percents[currentQ.correct] += remaining; // Add remainder
+
+                for (let i = 0; i < 4; i++) {
+                    document.getElementById(`audience-val-${i}`).innerText = `${percents[i]}%`;
+                    document.getElementById(`audience-bar-${i}`).style.height = `${percents[i]}%`;
+                }
+
+                openModal('modal-audience');
+
+            } else if (type === 'swap') {
+                // Swap question
+                if (EXTRA_QUESTIONS.length > 0) {
+                    // TỰ ĐỘNG KHỬ LỖI LẶP CÂU ĐỔI: Bốc ngẫu nhiên 1 câu trong mảng dự phòng
+                    const randomIndex = Math.floor(Math.random() * EXTRA_QUESTIONS.length);
+                    activeQuestions[currentQuestionIndex] = EXTRA_QUESTIONS[randomIndex];
+
+                    // Xóa câu đã bốc khỏi mảng dự phòng để lần sau không bị bốc trùng lại câu này
+                    EXTRA_QUESTIONS.splice(randomIndex, 1);
+
+                    loadQuestion();
+                }
+
+            }
+        }
+
+        // --- MODAL UTILS ---
+        function openModal(id) {
+            document.getElementById(id).classList.remove('hidden');
+        }
+
+        function closeModal(id) {
+            document.getElementById(id).classList.add('hidden');
+        }
+
+        function toggleLadderMobile() {
+            const container = document.getElementById('money-ladder-container');
+            container.classList.toggle('hidden');
+        }
+
+        // --- SHOW END GAME SCREEN ---
+        function showGameOver(isWin, prizeAmount, isStopped = false) {
+            const icon = document.getElementById('gameover-icon');
+            const title = document.getElementById('gameover-title');
+            const desc = document.getElementById('gameover-desc');
+            const prize = document.getElementById('final-prize');
+
+            prize.innerText = `${prizeAmount} VNĐ`;
+
+            if (isWin) {
+                icon.innerHTML = `<i class="fa-solid fa-crown text-yellow-400"></i>`;
+                title.innerText = "XUẤT SẮC! TRIỆU PHÚ!";
+                desc.innerText = "Chúc mừng bạn đã trả lời đúng tất cả 15 câu hỏi và trở thành Triệu Phú!";
+            } else if (isStopped) {
+                icon.innerHTML = `<i class="fa-solid fa-hand-holding-dollar"></i>`;
+                title.innerText = "BẠN ĐÃ DỪNG CUỘC CHƠI";
+                desc.innerText = "Quyết định dừng cuộc chơi an toàn để bảo toàn tiền thưởng!";
+            } else {
+                icon.innerHTML = `<i class="fa-solid fa-face-frown text-red-400"></i>`;
+                title.innerText = "RẤT TIẾC! THUA CUỘC";
+                desc.innerText = "Bạn đã chọn sai đáp án. Cảm ơn bạn đã tham gia chương trình!";
+            }
+
+            openModal('modal-gameover');
+        }
+    </script>
+</body>
+
+</html>

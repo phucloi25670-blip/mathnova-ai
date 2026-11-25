@@ -1,0 +1,6 @@
+{
+  "name": "MathNova AI - Học Toán THPT Trực Quan 3D",
+  "description": "Nền tảng học tập Toán THPT (Lớp 10, 11, 12) bám sát Chương trình GDPT 2018 và SGK Kết nối tri thức với cuộc sống: Kho công thức KaTeX, Đấu trường Game AI, Gia sư Socratic và Phòng thí nghiệm 2D/3D.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

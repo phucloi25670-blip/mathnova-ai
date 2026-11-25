@@ -1,0 +1,143 @@
+{
+  "entities": {
+    "UserWorkspace": {
+      "title": "UserWorkspace",
+      "description": "Private authenticated student learning workspace including profile, XP/streak progress, AI tutor chat history, drawn 2D/3D shape history, and wrong-answer notebook.",
+      "type": "object",
+      "properties": {
+        "uid": {
+          "type": "string",
+          "description": "Firebase Auth UID owning this workspace"
+        },
+        "displayName": {
+          "type": "string",
+          "description": "Student chosen nickname or display name",
+          "minLength": 1,
+          "maxLength": 60
+        },
+        "email": {
+          "type": "string",
+          "description": "Authenticated email or normalized identifier (private PII)",
+          "maxLength": 120
+        },
+        "provider": {
+          "type": "string",
+          "description": "Authentication provider identifier (google, facebook, password)",
+          "enum": ["google", "facebook", "password"]
+        },
+        "grade": {
+          "type": "string",
+          "description": "Selected Vietnamese high school grade level",
+          "enum": ["10", "11", "12", "thpt"]
+        },
+        "avatar": {
+          "type": "string",
+          "description": "Selected emoji avatar",
+          "minLength": 1,
+          "maxLength": 16
+        },
+        "progress": {
+          "type": "object",
+          "description": "Learning XP, streak, completed chapters/topics, and quiz stats"
+        },
+        "chatHistory": {
+          "type": "array",
+          "description": "Saved Socratic AI tutor conversation messages (max 60)"
+        },
+        "drawnHistory": {
+          "type": "array",
+          "description": "Saved 2D/3D MathLab visualizations (max 30)"
+        },
+        "wrongNotebook": {
+          "type": "array",
+          "description": "Saved wrong-answer review notebook entries (max 100)"
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server creation timestamp"
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server last update timestamp"
+        }
+      },
+      "required": [
+        "uid",
+        "displayName",
+        "grade",
+        "avatar",
+        "progress",
+        "createdAt",
+        "updatedAt"
+      ]
+    },
+    "LeaderboardProfile": {
+      "title": "LeaderboardProfile",
+      "description": "Public, zero-PII student ranking entry synchronized with the user's workspace for real-time Streak and XP leaderboard.",
+      "type": "object",
+      "properties": {
+        "uid": {
+          "type": "string",
+          "description": "Firebase Auth UID"
+        },
+        "displayName": {
+          "type": "string",
+          "description": "Public display nickname",
+          "minLength": 1,
+          "maxLength": 60
+        },
+        "avatar": {
+          "type": "string",
+          "description": "Public emoji avatar",
+          "minLength": 1,
+          "maxLength": 16
+        },
+        "grade": {
+          "type": "string",
+          "description": "Grade level",
+          "enum": ["10", "11", "12", "thpt"]
+        },
+        "xp": {
+          "type": "number",
+          "description": "Accumulated experience points (>= 0)"
+        },
+        "streak": {
+          "type": "number",
+          "description": "Current consecutive learning streak in days (>= 0)"
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server creation timestamp"
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server last update timestamp"
+        }
+      },
+      "required": [
+        "uid",
+        "displayName",
+        "avatar",
+        "grade",
+        "xp",
+        "streak",
+        "createdAt",
+        "updatedAt"
+      ]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": { "$ref": "#/entities/UserWorkspace" },
+      "description": "Owner-only private user workspace containing email PII and full learning history."
+    },
+    "/leaderboard/{userId}": {
+      "schema": { "$ref": "#/entities/LeaderboardProfile" },
+      "description": "Public zero-PII leaderboard collection readable by everyone and writable only by the owning authenticated user."
+    }
+  }
+}

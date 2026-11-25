@@ -1,0 +1,171 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // ===============================================================
+    // MathNova AI - Cloud Firestore Security Rules
+    // ===============================================================
+
+    // Global deny-by-default fallback
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // Helper functions
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isValidId(id) {
+      return id is string && id.size() >= 1 && id.size() <= 128 && !id.matches('.*\\s+.*');
+    }
+
+    function isOwner(userId) {
+      return isSignedIn() && request.auth.uid == userId;
+    }
+
+    function isValidGrade(grade) {
+      return grade in ['10', '11', '12', 'thpt'];
+    }
+
+    function isValidProvider(provider) {
+      return provider in ['google', 'facebook', 'password'];
+    }
+
+    function isValidDisplayName(name) {
+      return name is string && name.size() >= 1 && name.size() <= 60;
+    }
+
+    function isValidAvatar(avatar) {
+      return avatar is string && avatar.size() >= 1 && avatar.size() <= 16;
+    }
+
+    function isValidProgressMap(progress) {
+      return progress is map &&
+        progress.xp is number &&
+        progress.xp >= 0 &&
+        progress.xp <= 10000000 &&
+        progress.streak is number &&
+        progress.streak >= 0 &&
+        progress.streak <= 36500 &&
+        progress.lastActiveDate is string &&
+        progress.lastActiveDate.size() <= 20 &&
+        progress.completedChapterIds is list &&
+        progress.completedChapterIds.size() <= 100 &&
+        progress.gamesPlayed is number &&
+        progress.gamesPlayed >= 0 &&
+        progress.questionsAnswered is number &&
+        progress.questionsAnswered >= 0 &&
+        progress.questionsCorrect is number &&
+        progress.questionsCorrect >= 0;
+    }
+
+    function isValidUserWorkspace(data, userId) {
+      return data.keys().hasAll(['uid', 'displayName', 'grade', 'avatar', 'progress', 'createdAt', 'updatedAt']) &&
+        data.keys().hasOnly([
+          'uid',
+          'displayName',
+          'email',
+          'provider',
+          'grade',
+          'avatar',
+          'progress',
+          'chatHistory',
+          'drawnHistory',
+          'wrongNotebook',
+          'createdAt',
+          'updatedAt'
+        ]) &&
+        data.uid == userId &&
+        isValidDisplayName(data.displayName) &&
+        (!('email' in data) || (data.email is string && data.email.size() <= 120)) &&
+        (!('provider' in data) || isValidProvider(data.provider)) &&
+        isValidGrade(data.grade) &&
+        isValidAvatar(data.avatar) &&
+        isValidProgressMap(data.progress) &&
+        (!('chatHistory' in data) || (data.chatHistory is list && data.chatHistory.size() <= 60)) &&
+        (!('drawnHistory' in data) || (data.drawnHistory is list && data.drawnHistory.size() <= 30)) &&
+        (!('wrongNotebook' in data) || (data.wrongNotebook is list && data.wrongNotebook.size() <= 100)) &&
+        data.createdAt is timestamp &&
+        data.updatedAt is timestamp;
+    }
+
+    function isValidLeaderboardProfile(data, userId) {
+      return data.keys().hasAll(['uid', 'displayName', 'avatar', 'grade', 'xp', 'streak', 'createdAt', 'updatedAt']) &&
+        data.keys().hasOnly(['uid', 'displayName', 'avatar', 'grade', 'xp', 'streak', 'createdAt', 'updatedAt']) &&
+        data.uid == userId &&
+        isValidDisplayName(data.displayName) &&
+        isValidAvatar(data.avatar) &&
+        isValidGrade(data.grade) &&
+        data.xp is number &&
+        data.xp >= 0 &&
+        data.xp <= 10000000 &&
+        data.streak is number &&
+        data.streak >= 0 &&
+        data.streak <= 36500 &&
+        data.createdAt is timestamp &&
+        data.updatedAt is timestamp;
+    }
+
+    // Startup connection probe
+    match /test/connection {
+      allow get: if true;
+      allow list, write: if false;
+    }
+
+    // Private per-user workspace (strict owner-only access, never listable)
+    match /users/{userId} {
+      allow get: if isValidId(userId) && isOwner(userId);
+      allow list: if false;
+      allow create: if isValidId(userId) &&
+        isOwner(userId) &&
+        isValidUserWorkspace(request.resource.data, userId) &&
+        request.resource.data.createdAt == request.time &&
+        request.resource.data.updatedAt == request.time;
+      allow update: if isValidId(userId) &&
+        isOwner(userId) &&
+        isValidUserWorkspace(request.resource.data, userId) &&
+        request.resource.data.uid == resource.data.uid &&
+        request.resource.data.createdAt == resource.data.createdAt &&
+        request.resource.data.updatedAt == request.time &&
+        request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+          'displayName',
+          'email',
+          'provider',
+          'grade',
+          'avatar',
+          'progress',
+          'chatHistory',
+          'drawnHistory',
+          'wrongNotebook',
+          'updatedAt'
+        ]);
+      allow delete: if isValidId(userId) && isOwner(userId);
+    }
+
+    // Public zero-PII leaderboard collection (real registered users only)
+    match /leaderboard/{userId} {
+      allow get: if isValidId(userId);
+      allow list: if request.query.limit == null || request.query.limit <= 100;
+      allow create: if isValidId(userId) &&
+        isOwner(userId) &&
+        isValidLeaderboardProfile(request.resource.data, userId) &&
+        request.resource.data.createdAt == request.time &&
+        request.resource.data.updatedAt == request.time;
+      allow update: if isValidId(userId) &&
+        isOwner(userId) &&
+        isValidLeaderboardProfile(request.resource.data, userId) &&
+        request.resource.data.uid == resource.data.uid &&
+        request.resource.data.createdAt == resource.data.createdAt &&
+        request.resource.data.updatedAt == request.time &&
+        request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+          'displayName',
+          'avatar',
+          'grade',
+          'xp',
+          'streak',
+          'updatedAt'
+        ]);
+      allow delete: if isValidId(userId) && isOwner(userId);
+    }
+  }
+}
