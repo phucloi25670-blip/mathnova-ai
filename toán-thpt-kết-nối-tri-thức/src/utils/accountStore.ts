@@ -42,7 +42,7 @@ export function createDefaultUserProgress(todayIso: string = getTodayIsoDate()):
     lastCompletedActivityDate: '',
     completedChapterIds: [],
     completedTopicKeys: [],
-    lastStudiedChapterId: undefined,
+    lastStudiedChapterId: '',
     gamesPlayed: 0,
     questionsAnswered: 0,
     questionsCorrect: 0,
@@ -53,6 +53,73 @@ export function createDefaultUserProgress(todayIso: string = getTodayIsoDate()):
     energy: 5,
     lastEnergyRefillDate: todayIso,
     lastComicRewardDate: '',
+  };
+}
+
+export function normalizeProgressForFirestore(
+  progress?: Partial<UserProgress> | null,
+  todayIso: string = getTodayIsoDate()
+): UserProgress {
+  const base = createDefaultUserProgress(todayIso);
+  const src = progress && typeof progress === 'object' ? progress : {};
+  return {
+    ...base,
+    ...src,
+    xp: typeof src.xp === 'number' && Number.isFinite(src.xp) ? Math.max(0, src.xp) : 0,
+    streak:
+      typeof src.streak === 'number' && Number.isFinite(src.streak)
+        ? Math.max(0, src.streak)
+        : 0,
+    lastActiveDate:
+      typeof src.lastActiveDate === 'string' && src.lastActiveDate
+        ? src.lastActiveDate
+        : todayIso,
+    lastCompletedActivityDate:
+      typeof src.lastCompletedActivityDate === 'string'
+        ? src.lastCompletedActivityDate
+        : '',
+    completedChapterIds: Array.isArray(src.completedChapterIds)
+      ? src.completedChapterIds.filter((x): x is string => typeof x === 'string')
+      : [],
+    completedTopicKeys: Array.isArray(src.completedTopicKeys)
+      ? src.completedTopicKeys.filter((x): x is string => typeof x === 'string')
+      : [],
+    lastStudiedChapterId:
+      typeof src.lastStudiedChapterId === 'string' ? src.lastStudiedChapterId : '',
+    gamesPlayed:
+      typeof src.gamesPlayed === 'number' && Number.isFinite(src.gamesPlayed)
+        ? Math.max(0, src.gamesPlayed)
+        : 0,
+    questionsAnswered:
+      typeof src.questionsAnswered === 'number' && Number.isFinite(src.questionsAnswered)
+        ? Math.max(0, src.questionsAnswered)
+        : 0,
+    questionsCorrect:
+      typeof src.questionsCorrect === 'number' && Number.isFinite(src.questionsCorrect)
+        ? Math.max(0, src.questionsCorrect)
+        : 0,
+    millionaireUrl: typeof src.millionaireUrl === 'string' ? src.millionaireUrl : '',
+    dailyXp:
+      src.dailyXp && typeof src.dailyXp === 'object' && !Array.isArray(src.dailyXp)
+        ? src.dailyXp
+        : {},
+    formulaMastery:
+      src.formulaMastery &&
+      typeof src.formulaMastery === 'object' &&
+      !Array.isArray(src.formulaMastery)
+        ? src.formulaMastery
+        : {},
+    customReminders: Array.isArray(src.customReminders) ? src.customReminders : [],
+    energy:
+      typeof src.energy === 'number' && Number.isFinite(src.energy)
+        ? Math.max(0, src.energy)
+        : base.energy,
+    lastEnergyRefillDate:
+      typeof src.lastEnergyRefillDate === 'string' && src.lastEnergyRefillDate
+        ? src.lastEnergyRefillDate
+        : todayIso,
+    lastComicRewardDate:
+      typeof src.lastComicRewardDate === 'string' ? src.lastComicRewardDate : '',
   };
 }
 
@@ -325,10 +392,7 @@ export function importAccountBackupCode(
     updatedAt: now,
   };
 
-  const progress: UserProgress = {
-    ...createDefaultUserProgress(todayIso),
-    ...(ws.progress || {}),
-  };
+  const progress = normalizeProgressForFirestore(ws.progress, todayIso);
   progress.streak = refreshStreakOnLoad(
     progress.streak,
     progress.lastCompletedActivityDate,
@@ -531,6 +595,38 @@ export function parseFirebaseConfigInput(rawText: string): CustomFirebaseConfig 
   return result;
 }
 
+function isPlainObject(value: unknown): value is Record<string, unknown> {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
+  const proto = Object.getPrototypeOf(value);
+  return proto === Object.prototype || proto === null;
+}
+
+/**
+ * Recursively converts any `undefined` (and non-finite numbers) inside plain objects
+ * and arrays to `null` so Cloud Firestore `setDoc` / `updateDoc` never throws
+ * `Unsupported field value: undefined`. Non-plain objects such as Firestore
+ * `FieldValue` sentinels (`serverTimestamp()`) or `Date` are preserved untouched.
+ */
+export function sanitizeForFirestore<T>(value: T): T {
+  if (value === undefined) {
+    return null as unknown as T;
+  }
+  if (typeof value === 'number' && !Number.isFinite(value)) {
+    return null as unknown as T;
+  }
+  if (Array.isArray(value)) {
+    return value.map((item) => sanitizeForFirestore(item)) as unknown as T;
+  }
+  if (isPlainObject(value)) {
+    const cleaned: Record<string, unknown> = {};
+    for (const [key, val] of Object.entries(value)) {
+      cleaned[key] = val === undefined ? null : sanitizeForFirestore(val);
+    }
+    return cleaned as T;
+  }
+  return value;
+}
+
 export function sanitizeChatHistoryForFirestore(msgs: ChatMessage[]): ChatMessage[] {
   return msgs.slice(-60).map((m) => {
     if (m.imageDataUrl && m.imageDataUrl.length > 2000) {
@@ -566,10 +662,7 @@ export function loadAccountStore(
     if (parsed.accounts && typeof parsed.accounts === 'object') {
       for (const [id, ws] of Object.entries(parsed.accounts)) {
         if (!ws || !ws.profile) continue;
-        const progress: UserProgress = {
-          ...createDefaultUserProgress(todayIso),
-          ...(ws.progress || {}),
-        };
+        const progress = normalizeProgressForFirestore(ws.progress, todayIso);
         progress.streak = refreshStreakOnLoad(
           progress.streak,
           progress.lastCompletedActivityDate,
